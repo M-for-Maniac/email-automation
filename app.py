@@ -106,19 +106,22 @@ def fetch_emails():
 
 def analyze_email(email):
     logger.info(f"Sending to OpenRouter: Subject: {email['subject']}")
-    response = openai.chat.completions.create(
-        model="meta-llama/llama-3.1-70b-instruct:free",
-        messages=[{"role": "user", "content": f"Analyze this email and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"}],
-        headers={"HTTP-Referer": "http://your-app-url", "X-Title": "Email Analyzer"}
-    )
-    logger.info(f"OpenRouter response received")
-    return response.choices[0].message.content
+    try:
+        response = openai.chat.completions.create(
+            model="meta-llama/llama-3.1-70b-instruct:free",
+            messages=[{"role": "user", "content": f"Analyze this email and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"}]
+        )
+        logger.info(f"OpenRouter response received")
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"OpenRouter error: {str(e)}", exc_info=True)
+        raise
 
 def save_to_drive(email, suggestion):
     service = get_sheets_service()
     range_name = "Sheet1!A:C"
     timestamp = datetime.datetime.now().isoformat()
-    values = [[timestamp, email["subject"], suggestion]]
+    values = [[timestamp, email['subject'], suggestion]]
     body = {"values": values}
     service.spreadsheets().values().append(
         spreadsheetId=SHEET_ID,
