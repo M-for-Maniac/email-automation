@@ -14,7 +14,6 @@ import openai
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 app = Flask(__name__)
 
 # Environment variables
@@ -64,15 +63,22 @@ def get_sheets_service():
 @app.route("/webhook", methods=["POST"])
 async def webhook():
     update = request.get_json()
+    logger.info(f"Received update: {update}")
     if "message" in update and update["message"]["text"] == "/checkemails":
         chat_id = update["message"]["chat"]["id"]
+        logger.info(f"Processing /checkemails for chat_id: {chat_id}")
         try:
             emails = fetch_emails()
+            logger.info(f"Fetched {len(emails)} emails")
             for email in emails:
+                logger.info(f"Analyzing email: {email['subject']}")
                 suggestion = analyze_email(email)
+                logger.info(f"Sending suggestion for: {email['subject']}")
                 await bot.send_message(chat_id=chat_id, text=f"Subject: {email['subject']}\nSuggested Reply: {suggestion}")
                 save_to_drive(email, suggestion)
+                logger.info(f"Saved suggestion for: {email['subject']}")
             await bot.send_message(chat_id=chat_id, text="All emails processed.")
+            logger.info("All emails processed successfully")
         except Exception as e:
             logger.error(f"Error processing emails: {str(e)}", exc_info=True)
             await bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
@@ -99,11 +105,13 @@ def fetch_emails():
     return emails
 
 def analyze_email(email):
-    response = openai.ChatCompletion.create(
+    logger.info(f"Sending to OpenRouter: Subject: {email['subject']}")
+    response = openai.chat.completions.create(
         model="meta-llama/llama-3.1-70b-instruct:free",
         messages=[{"role": "user", "content": f"Analyze this email and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"}],
         headers={"HTTP-Referer": "http://your-app-url", "X-Title": "Email Analyzer"}
     )
+    logger.info(f"OpenRouter response received")
     return response.choices[0].message.content
 
 def save_to_drive(email, suggestion):
@@ -119,6 +127,7 @@ def save_to_drive(email, suggestion):
         insertDataOption="INSERT_ROWS",
         body=body
     ).execute()
+    logger.info(f"Saved to Google Sheet: {email['subject']}")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
