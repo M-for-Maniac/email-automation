@@ -1,6 +1,7 @@
 import os
 import base64
 import datetime
+import asyncio
 from flask import Flask, request
 import telegram
 from google.oauth2.credentials import Credentials
@@ -10,7 +11,7 @@ import openai
 
 app = Flask(__name__)
 
-# Environment variables (set these in Leapcell later)
+# Environment variables
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 GOOGLE_REFRESH_TOKEN = os.environ["GOOGLE_REFRESH_TOKEN"]
@@ -55,7 +56,7 @@ def get_sheets_service():
     return build("sheets", "v4", credentials=get_credentials())
 
 @app.route("/webhook", methods=["POST"])
-def webhook():
+async def webhook():
     update = request.get_json()
     if "message" in update and update["message"]["text"] == "/checkemails":
         chat_id = update["message"]["chat"]["id"]
@@ -63,11 +64,11 @@ def webhook():
             emails = fetch_emails()
             for email in emails:
                 suggestion = analyze_email(email)
-                bot.send_message(chat_id=chat_id, text=f"Subject: {email['subject']}\nSuggested Reply: {suggestion}")
+                await bot.send_message(chat_id=chat_id, text=f"Subject: {email['subject']}\nSuggested Reply: {suggestion}")
                 save_to_drive(email, suggestion)
-            bot.send_message(chat_id=chat_id, text="All emails processed.")
+            await bot.send_message(chat_id=chat_id, text="All emails processed.")
         except Exception as e:
-            bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
+            await bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
     return "OK"
 
 def fetch_emails():
