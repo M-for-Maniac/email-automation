@@ -2,12 +2,18 @@ import os
 import base64
 import datetime
 import asyncio
+import logging
 from flask import Flask, request
 import telegram
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 import openai
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 app = Flask(__name__)
 
@@ -68,6 +74,7 @@ async def webhook():
                 save_to_drive(email, suggestion)
             await bot.send_message(chat_id=chat_id, text="All emails processed.")
         except Exception as e:
+            logger.error(f"Error processing emails: {str(e)}", exc_info=True)
             await bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
     return "OK"
 
