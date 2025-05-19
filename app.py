@@ -3,12 +3,12 @@ import base64
 import datetime
 import asyncio
 import logging
+import requests
 from flask import Flask, request
 import telegram
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
-import openai
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,10 +28,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/spreadsheets"
 ]
-
-# Configure OpenRouter
-openai.api_key = OPENROUTER_API_KEY
-openai.api_base = "https://openrouter.ai/api/v1"
 
 # Initialize Telegram bot
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
@@ -107,14 +103,34 @@ def fetch_emails():
 def analyze_email(email):
     logger.info(f"Sending to OpenRouter: Subject: {email['subject']}")
     try:
-        response = openai.chat.completions.create(
-            model="meta-llama/llama-3.1-70b-instruct:free",
-            messages=[{"role": "user", "content": f"Analyze this email and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"}]
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "meta-llama/llama-3.1-70b-instruct:free",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Analyze this email and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"
+                    }
+                ]
+            }
         )
-        logger.info(f"OpenRouter response received")
-        return response.choices[0].message.content
-    except Exception as e:
-        logger.error(f"OpenRouter error: {str(e)}", exc_info=True)
+        response.raise_for_status()  # Raises an HTTPError for bad responses
+        response_data = response.json()
+        logger.info("OpenRouter response received")
+        return response_data["choices"][0]["message"]["content"]
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"OpenRouter HTTP error: {str(e)}", exc_info=True)
+        raise
+    except requests.exceptions.RequestException as e:
+        logger.error(f"OpenRouter request error: {str(e)}", exc_info=True)
+        raise
+    except KeyError as e:
+        logger.error(f"OpenRouter response parsing error: {str(e)}", exc_info=True)
         raise
 
 def save_to_drive(email, suggestion):

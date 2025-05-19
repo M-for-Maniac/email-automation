@@ -3,5 +3,6 @@ python-telegram-bot
 google-auth
 google-auth-oauthlib
 google-api-python-client
+requests
 openai
 gunicorn
