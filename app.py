@@ -110,7 +110,7 @@ def analyze_email(email):
                 "Content-Type": "application/json",
             },
             json={
-                "model": "meta-llama/llama-3.1-70b-instruct:free",
+                "model": "openai/gpt-3.5-turbo",
                 "messages": [
                     {
                         "role": "user",
@@ -119,7 +119,7 @@ def analyze_email(email):
                 ]
             }
         )
-        response.raise_for_status()  # Raises an HTTPError for bad responses
+        # response.raise_for_status()  # Raises an HTTPError for bad responses
         response_data = response.json()
         logger.info("OpenRouter response received")
         return response_data["choices"][0]["message"]["content"]
