@@ -9,6 +9,7 @@ import telegram
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
+from telegram.request import HTTPXRequest
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,8 +30,20 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets"
 ]
 
+# Configure Telegram bot with custom HTTPXRequest
+request = HTTPXRequest(
+    connection_pool_size=30,  # Increased pool size
+    pool_timeout=60.0,  # Increased timeout (seconds)
+    read_timeout=60.0,
+    write_timeout=60.0,
+    connect_timeout=60.0
+)
+
 # Initialize Telegram bot
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
+
+# Cache for processed update IDs
+processed_updates = set()
 
 # Cached credentials
 _creds = None
@@ -56,10 +69,38 @@ def get_gmail_service():
 def get_sheets_service():
     return build("sheets", "v4", credentials=get_credentials())
 
+async def send_message_with_retry(bot, chat_id, text, max_retries=5):
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Sending message to chat_id {chat_id}: {text[:50]}...")
+            await bot.send_message(chat_id=chat_id, text=text)
+            logger.info(f"Message sent successfully to chat_id {chat_id}")
+            return
+        except telegram.error.TimedOut as e:
+            logger.warning(f"Send message attempt {attempt + 1} failed: {str(e)}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+            else:
+                logger.error(f"Failed to send message after {max_retries} attempts: {str(e)}")
+                raise
+        except Exception as e:
+            logger.error(f"Unexpected error sending message: {str(e)}", exc_info=True)
+            raise
+
 @app.route("/webhook", methods=["POST"])
 async def webhook():
     update = request.get_json()
+    if not update or "update_id" not in update:
+        logger.warning("Invalid update received")
+        return "OK"
+
+    update_id = update["update_id"]
+    if update_id in processed_updates:
+        logger.info(f"Skipping duplicate update_id: {update_id}")
+        return "OK"
+    processed_updates.add(update_id)
     logger.info(f"Received update: {update}")
+
     if "message" in update and "text" in update["message"]:
         chat_id = update["message"]["chat"]["id"]
         text = update["message"]["text"]
@@ -116,6 +157,8 @@ def analyze_email(email):
             headers={
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
+                "HTTP-Referer": "https://email-automation-mehrbodcrud285-rmkp8erf.leapcell.dev",
+                "X-Title": "Email Analyzer"
             },
             json={
                 "model": "openai/gpt-3.5-turbo",
