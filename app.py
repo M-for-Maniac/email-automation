@@ -60,24 +60,32 @@ def get_sheets_service():
 async def webhook():
     update = request.get_json()
     logger.info(f"Received update: {update}")
-    if "message" in update and update["message"]["text"] == "/checkemails":
+    if "message" in update and "text" in update["message"]:
         chat_id = update["message"]["chat"]["id"]
-        logger.info(f"Processing /checkemails for chat_id: {chat_id}")
-        try:
-            emails = fetch_emails()
-            logger.info(f"Fetched {len(emails)} emails")
-            for email in emails:
-                logger.info(f"Analyzing email: {email['subject']}")
-                suggestion = analyze_email(email)
-                logger.info(f"Sending suggestion for: {email['subject']}")
-                await bot.send_message(chat_id=chat_id, text=f"Subject: {email['subject']}\nSuggested Reply: {suggestion}")
-                save_to_drive(email, suggestion)
-                logger.info(f"Saved suggestion for: {email['subject']}")
-            await bot.send_message(chat_id=chat_id, text="All emails processed.")
-            logger.info("All emails processed successfully")
-        except Exception as e:
-            logger.error(f"Error processing emails: {str(e)}", exc_info=True)
-            await bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
+        text = update["message"]["text"]
+        if text == "/start":
+            logger.info(f"Processing /start for chat_id: {chat_id}")
+            await bot.send_message(
+                chat_id=chat_id,
+                text="Welcome to the Email Analyzer Bot!\nUse /checkemails to fetch your unread emails and get professional reply suggestions."
+            )
+        elif text == "/checkemails":
+            logger.info(f"Processing /checkemails for chat_id: {chat_id}")
+            try:
+                emails = fetch_emails()
+                logger.info(f"Fetched {len(emails)} emails")
+                for email in emails:
+                    logger.info(f"Analyzing email: {email['subject']}")
+                    suggestion = analyze_email(email)
+                    logger.info(f"Sending suggestion for: {email['subject']}")
+                    await bot.send_message(chat_id=chat_id, text=f"Subject: {email['subject']}\nSuggested Reply: {suggestion}")
+                    save_to_drive(email, suggestion)
+                    logger.info(f"Saved suggestion for: {email['subject']}")
+                await bot.send_message(chat_id=chat_id, text="All emails processed.")
+                logger.info("All emails processed successfully")
+            except Exception as e:
+                logger.error(f"Error processing emails: {str(e)}", exc_info=True)
+                await bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
     return "OK"
 
 def fetch_emails():
@@ -119,7 +127,9 @@ def analyze_email(email):
                 ]
             }
         )
-        # response.raise_for_status()  # Raises an HTTPError for bad responses
+        logger.info(f"OpenRouter response status: {response.status_code}")
+        logger.info(f"OpenRouter response body: {response.text}")
+        response.raise_for_status()  # Raises an HTTPError for bad responses
         response_data = response.json()
         logger.info("OpenRouter response received")
         return response_data["choices"][0]["message"]["content"]
