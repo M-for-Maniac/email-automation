@@ -114,7 +114,7 @@ def analyze_email(email):
                 "messages": [
                     {
                         "role": "user",
-                        "content": f"Analyze this email and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"
+                        "content": f"Analyze this email, Summarize the Email for me to take a look, and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"
                     }
                 ]
             }
