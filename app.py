@@ -31,16 +31,14 @@ SCOPES = [
 ]
 
 # Configure Telegram bot with custom HTTPXRequest
-request = HTTPXRequest(
+httpx_request = HTTPXRequest(
     connection_pool_size=30,  # Increased pool size
     pool_timeout=60.0,  # Increased timeout (seconds)
     read_timeout=60.0,
     write_timeout=60.0,
     connect_timeout=60.0
 )
-
-# Initialize Telegram bot
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+bot = telegram.Bot(token=TELEGRAM_TOKEN, request=httpx_request)
 
 # Cache for processed update IDs
 processed_updates = set()
