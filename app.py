@@ -99,9 +99,9 @@ async def send_message_with_retry(bot, chat_id, text, max_retries=5):
         except Exception as e:
             logger.error(f"Unexpected error sending message: {str(e)}", exc_info=True)
             raise
-        finally:
-            if 'new_loop' in locals() and new_loop.is_running():
-                new_loop.close()
+    finally:
+        if 'new_loop' in locals() and new_loop.is_running():
+            new_loop.close()
 
 
 @app.route("/webhook", methods=["POST"])
