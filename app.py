@@ -93,7 +93,6 @@ async def send_message_with_retry(bot, chat_id, text, max_retries=5):
             logger.error(f"Unexpected error sending message: {str(e)}", exc_info=True)
             raise
 
-
 @app.route("/webhook", methods=["POST"])
 async def webhook():
     update = request.get_json()
@@ -136,6 +135,16 @@ async def webhook():
                 logger.error(f"Error processing emails: {str(e)}", exc_info=True)
                 await send_message_with_retry(bot, chat_id, f"Error: {str(e)}")
     return "OK"
+
+@app.route("/kaithhealthcheck", methods=["GET"])
+def health_check():
+    logger.info("Received health check request")
+    return "OK", 200
+
+@app.route("/kaithheathcheck", methods=["GET"])
+def health_check_typo():
+    logger.info("Received health check request (typo)")
+    return "OK", 200
 
 def fetch_emails():
     service = get_gmail_service()
