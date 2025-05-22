@@ -10,7 +10,6 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from telegram.request import HTTPXRequest
-from asgiref.wsgi import WsgiToAsgi
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -82,13 +81,6 @@ async def send_message_with_retry(bot, chat_id, text, max_retries=5):
             else:
                 logger.error(f"Failed to send message after {max_retries} attempts: {str(e)}")
                 raise
-        except telegram.error.NetworkError as e:
-            logger.warning(f"Network error on attempt {attempt + 1}: {str(e)}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)
-            else:
-                logger.error(f"Failed to send message after {max_retries} attempts: {str(e)}")
-                raise
         except Exception as e:
             logger.error(f"Unexpected error sending message: {str(e)}", exc_info=True)
             raise
@@ -136,16 +128,6 @@ async def webhook():
                 await send_message_with_retry(bot, chat_id, f"Error: {str(e)}")
     return "OK"
 
-@app.route("/kaithhealthcheck", methods=["GET"])
-def health_check():
-    logger.info("Received health check request")
-    return "OK", 200
-
-@app.route("/kaithheathcheck", methods=["GET"])
-def health_check_typo():
-    logger.info("Received health check request (typo)")
-    return "OK", 200
-
 def fetch_emails():
     service = get_gmail_service()
     results = service.users().messages().list(userId="me", q="is:unread", maxResults=3).execute()
@@ -174,7 +156,7 @@ def analyze_email(email):
             headers={
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://email-automation-mehrbodcrud285-rmkp8erf.leapcell.dev",
+                "HTTP-Referer": "https://email-automation-mehrbodcrud285-rmkp8erf.leapcell.dev",  # Replace with your Leapcell URL
                 "X-Title": "Email Analyzer"
             },
             json={
@@ -182,14 +164,14 @@ def analyze_email(email):
                 "messages": [
                     {
                         "role": "user",
-                        "content": f"Analyze this email, Summarize the Email for me to take a look, and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"
+                        "content": f"Analyze this email and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"
                     }
                 ]
             }
         )
         logger.info(f"OpenRouter response status: {response.status_code}")
         logger.info(f"OpenRouter response body: {response.text}")
-        response.raise_for_status()  # Raises an HTTPError for bad responses
+        response.raise_for_status()
         response_data = response.json()
         logger.info("OpenRouter response received")
         return response_data["choices"][0]["message"]["content"]
@@ -217,9 +199,6 @@ def save_to_drive(email, suggestion):
         body=body
     ).execute()
     logger.info(f"Saved to Google Sheet: {email['subject']}")
-
-# Wrap Flask app for ASGI compatibility
-app = WsgiToAsgi(app)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)

@@ -1,8 +1,7 @@
 flask[async]
-python-telegram-bot>=20.7
+python-telegram-bot>=20.0
 google-auth
 google-auth-oauthlib
 google-api-python-client
 requests
-uvicorn
-asgiref
+gunicorn
