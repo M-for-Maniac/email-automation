@@ -68,6 +68,7 @@ def get_sheets_service():
     return build("sheets", "v4", credentials=get_credentials())
 
 async def send_message_with_retry(bot, chat_id, text, max_retries=5):
+    loop = asyncio.get_running_loop()
     for attempt in range(max_retries):
         try:
             logger.info(f"Sending message to chat_id {chat_id}: {text[:50]}...")
@@ -81,9 +82,27 @@ async def send_message_with_retry(bot, chat_id, text, max_retries=5):
             else:
                 logger.error(f"Failed to send message after {max_retries} attempts: {str(e)}")
                 raise
+        except RuntimeError as e:
+            logger.error(f"Event loop error: {str(e)}", exc_info=True)
+            if "closed" in str(e).lower():
+                logger.warning("Event loop closed, attempting to use new loop")
+                try:
+                    # Fallback to new event loop
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    await bot.send_message(chat_id=chat_id, text=text)
+                    logger.info(f"Message sent successfully with new loop to chat_id {chat_id}")
+                    return
+                except Exception as e2:
+                    logger.error(f"Failed to send message with new loop: {str(e2)}", exc_info=True)
+                    raise
         except Exception as e:
             logger.error(f"Unexpected error sending message: {str(e)}", exc_info=True)
             raise
+        finally:
+            if 'new_loop' in locals() and new_loop.is_running():
+                new_loop.close()
+
 
 @app.route("/webhook", methods=["POST"])
 async def webhook():
@@ -104,9 +123,8 @@ async def webhook():
         text = update["message"]["text"]
         if text == "/start":
             logger.info(f"Processing /start for chat_id: {chat_id}")
-            await bot.send_message(
-                chat_id=chat_id,
-                text="Welcome to the Email Analyzer Bot!\nUse /checkemails to fetch your unread emails and get professional reply suggestions."
+            await send_message_with_retry(
+                bot, chat_id, "Welcome to the Email Analyzer Bot!\nUse /checkemails to fetch your unread emails and get professional reply suggestions."
             )
         elif text == "/checkemails":
             logger.info(f"Processing /checkemails for chat_id: {chat_id}")
@@ -117,14 +135,16 @@ async def webhook():
                     logger.info(f"Analyzing email: {email['subject']}")
                     suggestion = analyze_email(email)
                     logger.info(f"Sending suggestion for: {email['subject']}")
-                    await bot.send_message(chat_id=chat_id, text=f"Subject: {email['subject']}\nSuggested Reply: {suggestion}")
+                    await send_message_with_retry(
+                        bot, chat_id, f"Subject: {email['subject']}\nSuggested Reply: {suggestion}"
+                    )
                     save_to_drive(email, suggestion)
                     logger.info(f"Saved suggestion for: {email['subject']}")
-                await bot.send_message(chat_id=chat_id, text="All emails processed.")
+                await send_message_with_retry(bot, chat_id, "All emails processed.")
                 logger.info("All emails processed successfully")
             except Exception as e:
                 logger.error(f"Error processing emails: {str(e)}", exc_info=True)
-                await bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
+                await send_message_with_retry(bot, chat_id, f"Error: {str(e)}")
     return "OK"
 
 def fetch_emails():
