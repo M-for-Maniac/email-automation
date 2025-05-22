@@ -68,7 +68,6 @@ def get_sheets_service():
     return build("sheets", "v4", credentials=get_credentials())
 
 async def send_message_with_retry(bot, chat_id, text, max_retries=5):
-    loop = asyncio.get_running_loop()
     for attempt in range(max_retries):
         try:
             logger.info(f"Sending message to chat_id {chat_id}: {text[:50]}...")
@@ -82,26 +81,16 @@ async def send_message_with_retry(bot, chat_id, text, max_retries=5):
             else:
                 logger.error(f"Failed to send message after {max_retries} attempts: {str(e)}")
                 raise
-        except RuntimeError as e:
-            logger.error(f"Event loop error: {str(e)}", exc_info=True)
-            if "closed" in str(e).lower():
-                logger.warning("Event loop closed, attempting to use new loop")
-                try:
-                    # Fallback to new event loop
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    await bot.send_message(chat_id=chat_id, text=text)
-                    logger.info(f"Message sent successfully with new loop to chat_id {chat_id}")
-                    return
-                except Exception as e2:
-                    logger.error(f"Failed to send message with new loop: {str(e2)}", exc_info=True)
-                    raise
+        except telegram.error.NetworkError as e:
+            logger.warning(f"Network error on attempt {attempt + 1}: {str(e)}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+            else:
+                logger.error(f"Failed to send message after {max_retries} attempts: {str(e)}")
+                raise
         except Exception as e:
             logger.error(f"Unexpected error sending message: {str(e)}", exc_info=True)
             raise
-    finally:
-        if 'new_loop' in locals() and new_loop.is_running():
-            new_loop.close()
 
 
 @app.route("/webhook", methods=["POST"])
