@@ -10,6 +10,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from telegram.request import HTTPXRequest
+from asgiref.wsgi import WsgiToAsgi
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -207,6 +208,9 @@ def save_to_drive(email, suggestion):
         body=body
     ).execute()
     logger.info(f"Saved to Google Sheet: {email['subject']}")
+
+# Wrap Flask app for ASGI compatibility
+app = WsgiToAsgi(app)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
