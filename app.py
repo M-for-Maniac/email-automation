@@ -47,7 +47,7 @@ processed_updates = set()
 user_sender_names = {}
 
 # Predefined staff/company names
-PREDEFINED_SENDERS = ["مهربد", "رسام", "Donchamp"]
+PREDEFINED_SENDERS = ["Mehrbod", "Donchamp"]
 
 # Cached credentials
 _creds = None
@@ -124,14 +124,36 @@ async def webhook():
                 "Welcome to the Email Analyzer Bot!\n"
                 "Please choose a sender to filter emails from:\n"
                 f"Predefined options: {predefined_options}\n"
-                "Or reply with a custom name or email to check their emails.\n"
+                "Or reply with a custom name or email.\n"
+                "Use /listsenders to see senders of latest unread emails.\n"
                 "Then use /checkemails to fetch and analyze the filtered emails."
             )
             await send_message_with_retry(bot, chat_id, response)
             # Clear any previous sender name
             user_sender_names.pop(chat_id, None)
 
-        # Handle sender name input (any non-command text after /start)
+        # Handle /listsenders command
+        elif text == "/listsenders":
+            logger.info(f"Processing /listsenders for chat_id: {chat_id}")
+            try:
+                senders = fetch_emails(return_senders=True)
+                if not senders:
+                    await send_message_with_retry(
+                        bot, chat_id, "No unread emails found."
+                    )
+                else:
+                    sender_list = "\n".join([f"- {sender}" for sender in senders])
+                    response = (
+                        "Senders of the latest unread emails:\n"
+                        f"{sender_list}\n"
+                        "Reply with one of these names or another sender to filter emails, then use /checkemails."
+                    )
+                    await send_message_with_retry(bot, chat_id, response)
+            except Exception as e:
+                logger.error(f"Error fetching senders: {str(e)}", exc_info=True)
+                await send_message_with_retry(bot, chat_id, f"Error: {str(e)}")
+
+        # Handle sender name input or commands
         elif chat_id in user_sender_names or text.startswith("/"):
             # Handle /checkemails
             if text == "/checkemails":
@@ -144,7 +166,7 @@ async def webhook():
                     sender_name = user_sender_names[chat_id]
                     logger.info(f"Processing /checkemails for chat_id: {chat_id}, sender: {sender_name}")
                     try:
-                        emails = fetch_emails(sender_name)
+                        emails = fetch_emails(sender_name=sender_name)
                         logger.info(f"Fetched {len(emails)} emails for sender: {sender_name}")
                         if not emails:
                             await send_message_with_retry(
@@ -156,7 +178,7 @@ async def webhook():
                                 suggestion = analyze_email(email)
                                 logger.info(f"Sending suggestion for: {email['subject']}")
                                 await send_message_with_retry(
-                                    bot, chat_id, f"Subject: {email['subject']}\nSuggested Reply with Summary for you to Read:\n{suggestion}"
+                                    bot, chat_id, f"Subject: {email['subject']}\nSuggested Reply: {suggestion}"
                                 )
                                 save_to_drive(email, suggestion)
                                 logger.info(f"Saved suggestion for: {email['subject']}")
@@ -168,7 +190,7 @@ async def webhook():
             else:
                 logger.info(f"Ignoring command {text} for chat_id: {chat_id}")
                 await send_message_with_retry(
-                    bot, chat_id, "Please use /start to select a sender or /checkemails to process emails."
+                    bot, chat_id, "Please use /start, /listsenders, or /checkemails, or reply with a sender name."
                 )
         else:
             # Store the sender name
@@ -180,13 +202,24 @@ async def webhook():
 
     return "OK"
 
-def fetch_emails(sender_name=None):
+def fetch_emails(sender_name=None, return_senders=False):
     service = get_gmail_service()
     query = "is:unread"
     if sender_name:
         query += f" from:{sender_name}"
     results = service.users().messages().list(userId="me", q=query, maxResults=3).execute()
     messages = results.get("messages", [])
+    
+    if return_senders:
+        senders = []
+        for msg in messages:
+            msg_data = service.users().messages().get(userId="me", id=msg["id"], format="metadata", metadataHeaders=["From"]).execute()
+            headers = {h["name"]: h["value"] for h in msg_data["payload"]["headers"]}
+            sender = headers.get("From", "Unknown Sender")
+            if sender not in senders:
+                senders.append(sender)
+        return senders
+    
     emails = []
     for msg in messages:
         msg_data = service.users().messages().get(userId="me", id=msg["id"], format="full").execute()
