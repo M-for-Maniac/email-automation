@@ -43,6 +43,12 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN, request=httpx_request)
 # Cache for processed update IDs
 processed_updates = set()
 
+# Store user-selected sender names per chat_id
+user_sender_names = {}
+
+# Predefined staff/company names
+PREDEFINED_SENDERS = ["مهربد", "رسام", "Donchamp"]
+
 # Cached credentials
 _creds = None
 
@@ -77,7 +83,14 @@ async def send_message_with_retry(bot, chat_id, text, max_retries=5):
         except telegram.error.TimedOut as e:
             logger.warning(f"Send message attempt {attempt + 1} failed: {str(e)}")
             if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                await asyncio.sleep(2 ** attempt)
+            else:
+                logger.error(f"Failed to send message after {max_retries} attempts: {str(e)}")
+                raise
+        except telegram.error.NetworkError as e:
+            logger.warning(f"Network error on attempt {attempt + 1}: {str(e)}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
             else:
                 logger.error(f"Failed to send message after {max_retries} attempts: {str(e)}")
                 raise
@@ -101,36 +114,78 @@ async def webhook():
 
     if "message" in update and "text" in update["message"]:
         chat_id = update["message"]["chat"]["id"]
-        text = update["message"]["text"]
+        text = update["message"]["text"].strip()
+
+        # Handle /start command
         if text == "/start":
             logger.info(f"Processing /start for chat_id: {chat_id}")
-            await send_message_with_retry(
-                bot, chat_id, "Welcome to the Email Analyzer Bot!\nUse /checkemails to fetch your unread emails and get professional reply suggestions."
+            predefined_options = ", ".join(PREDEFINED_SENDERS)
+            response = (
+                "Welcome to the Email Analyzer Bot!\n"
+                "Please choose a sender to filter emails from:\n"
+                f"Predefined options: {predefined_options}\n"
+                "Or reply with a custom name or email to check their emails.\n"
+                "Then use /checkemails to fetch and analyze the filtered emails."
             )
-        elif text == "/checkemails":
-            logger.info(f"Processing /checkemails for chat_id: {chat_id}")
-            try:
-                emails = fetch_emails()
-                logger.info(f"Fetched {len(emails)} emails")
-                for email in emails:
-                    logger.info(f"Analyzing email: {email['subject']}")
-                    suggestion = analyze_email(email)
-                    logger.info(f"Sending suggestion for: {email['subject']}")
+            await send_message_with_retry(bot, chat_id, response)
+            # Clear any previous sender name
+            user_sender_names.pop(chat_id, None)
+
+        # Handle sender name input (any non-command text after /start)
+        elif chat_id in user_sender_names or text.startswith("/"):
+            # Handle /checkemails
+            if text == "/checkemails":
+                if chat_id not in user_sender_names:
+                    logger.info(f"No sender selected for chat_id: {chat_id}")
                     await send_message_with_retry(
-                        bot, chat_id, f"Subject: {email['subject']}\nSuggested Reply: {suggestion}"
+                        bot, chat_id, "Please reply with a sender name first, then use /checkemails."
                     )
-                    save_to_drive(email, suggestion)
-                    logger.info(f"Saved suggestion for: {email['subject']}")
-                await send_message_with_retry(bot, chat_id, "All emails processed.")
-                logger.info("All emails processed successfully")
-            except Exception as e:
-                logger.error(f"Error processing emails: {str(e)}", exc_info=True)
-                await send_message_with_retry(bot, chat_id, f"Error: {str(e)}")
+                else:
+                    sender_name = user_sender_names[chat_id]
+                    logger.info(f"Processing /checkemails for chat_id: {chat_id}, sender: {sender_name}")
+                    try:
+                        emails = fetch_emails(sender_name)
+                        logger.info(f"Fetched {len(emails)} emails for sender: {sender_name}")
+                        if not emails:
+                            await send_message_with_retry(
+                                bot, chat_id, f"No unread emails found from {sender_name}."
+                            )
+                        else:
+                            for email in emails:
+                                logger.info(f"Analyzing email: {email['subject']}")
+                                suggestion = analyze_email(email)
+                                logger.info(f"Sending suggestion for: {email['subject']}")
+                                await send_message_with_retry(
+                                    bot, chat_id, f"Subject: {email['subject']}\nSuggested Reply with Summary for you to Read:\n{suggestion}"
+                                )
+                                save_to_drive(email, suggestion)
+                                logger.info(f"Saved suggestion for: {email['subject']}")
+                            await send_message_with_retry(bot, chat_id, "All emails processed.")
+                            logger.info("All emails processed successfully")
+                    except Exception as e:
+                        logger.error(f"Error processing emails: {str(e)}", exc_info=True)
+                        await send_message_with_retry(bot, chat_id, f"Error: {str(e)}")
+            else:
+                logger.info(f"Ignoring command {text} for chat_id: {chat_id}")
+                await send_message_with_retry(
+                    bot, chat_id, "Please use /start to select a sender or /checkemails to process emails."
+                )
+        else:
+            # Store the sender name
+            user_sender_names[chat_id] = text
+            logger.info(f"Stored sender name '{text}' for chat_id: {chat_id}")
+            await send_message_with_retry(
+                bot, chat_id, f"Selected sender: {text}. Now use /checkemails to fetch their emails."
+            )
+
     return "OK"
 
-def fetch_emails():
+def fetch_emails(sender_name=None):
     service = get_gmail_service()
-    results = service.users().messages().list(userId="me", q="is:unread", maxResults=3).execute()
+    query = "is:unread"
+    if sender_name:
+        query += f" from:{sender_name}"
+    results = service.users().messages().list(userId="me", q=query, maxResults=3).execute()
     messages = results.get("messages", [])
     emails = []
     for msg in messages:
@@ -164,7 +219,7 @@ def analyze_email(email):
                 "messages": [
                     {
                         "role": "user",
-                        "content": f"Analyze this email and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"
+                        "content": f"Analyze this email, Summarize and suggest a professional reply: Subject: {email['subject']} Content: {email['body']}"
                     }
                 ]
             }
